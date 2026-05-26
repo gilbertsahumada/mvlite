@@ -157,7 +157,7 @@ async fn view_function(
     let args: Vec<Vec<u8>> = payload
         .arguments
         .iter()
-        .map(|v| serde_json::to_vec(v).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string())))
+        .map(|v| serialize_view_arg(v))
         .collect::<Result<_, _>>()?;
 
     session
@@ -190,6 +190,35 @@ async fn mint(
 }
 
 // --- helpers ---
+
+fn serialize_view_arg(v: &serde_json::Value) -> Result<Vec<u8>, (StatusCode, String)> {
+    match v {
+        serde_json::Value::String(s) => {
+            if let Ok(addr) = AccountAddress::from_hex_literal(s)
+                .or_else(|_| AccountAddress::from_hex(s))
+            {
+                bcs::to_bytes(&addr)
+                    .map_err(|e| (StatusCode::BAD_REQUEST, format!("BCS error: {}", e)))
+            } else {
+                bcs::to_bytes(s)
+                    .map_err(|e| (StatusCode::BAD_REQUEST, format!("BCS error: {}", e)))
+            }
+        }
+        serde_json::Value::Number(n) => {
+            if let Some(val) = n.as_u64() {
+                bcs::to_bytes(&val)
+                    .map_err(|e| (StatusCode::BAD_REQUEST, format!("BCS error: {}", e)))
+            } else {
+                Err((StatusCode::BAD_REQUEST, format!("Unsupported number: {}", n)))
+            }
+        }
+        serde_json::Value::Bool(b) => {
+            bcs::to_bytes(b)
+                .map_err(|e| (StatusCode::BAD_REQUEST, format!("BCS error: {}", e)))
+        }
+        _ => Err((StatusCode::BAD_REQUEST, format!("Unsupported arg type: {}", v))),
+    }
+}
 
 fn parse_address(s: &str) -> Result<AccountAddress, (StatusCode, String)> {
     AccountAddress::from_hex_literal(s)
