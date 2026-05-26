@@ -123,11 +123,17 @@ async fn get_account_resources(
 ) -> Result<Json<Vec<ResourceResponse>>, (StatusCode, String)> {
     let addr = parse_address(&address)?;
 
+    // The session API does not expose a "list all resources" method.
+    // We probe a fixed set of common framework types. User-deployed
+    // resources require the specific GET /resource/:type endpoint.
     let known_types = [
         "0x1::account::Account",
         "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>",
         "0x1::fungible_asset::FungibleStore",
+        "0x1::fungible_asset::Metadata",
         "0x1::object::ObjectCore",
+        "0x1::code::PackageRegistry",
+        "0x1::staking_contract::Store",
     ];
 
     let mut resources = Vec::new();
