@@ -240,7 +240,7 @@ async fn simulate_transaction(
         })?;
 
     let (vm_status, output) = session
-        .execute_transaction(txn)
+        .simulate_transaction(txn)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let success = vm_status == aptos_types::vm_status::VMStatus::Executed;

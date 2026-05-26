@@ -56,6 +56,18 @@ impl SessionWrapper {
         Ok(result)
     }
 
+    pub fn simulate_transaction(
+        &self,
+        txn: SignedTransaction,
+    ) -> Result<(VMStatus, TransactionOutput)> {
+        // Simulation runs the tx but does NOT advance the block.
+        // Limitation: the DeltaStateStore is still mutated (the Session
+        // API has no snapshot/rollback). Gas estimation is accurate;
+        // state side-effects leak. Acceptable for dev tooling.
+        let mut session = self.inner.lock().unwrap();
+        session.execute_transaction(txn, false, false)
+    }
+
     pub fn get_chain_id(&self) -> u64 {
         4
     }
