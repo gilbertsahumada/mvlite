@@ -1,0 +1,130 @@
+# mvlite
+
+Lightweight Move VM for local development. An anvil-like experience for Movement L1.
+
+## What is this?
+
+mvlite embeds the AptosVM directly as a Rust library -- no consensus, no P2P networking, no full node. It exposes an Aptos-compatible REST API so existing tools (movehat, @aptos-labs/ts-sdk) can talk to it without modification.
+
+```
+Your tests (TypeScript)
+    |
+    | HTTP (same REST API as a real node)
+    |
+    v
+mvlite (this binary)
+    |
+    | direct, in-memory
+    |
+    v
+AptosVM (Move VM)
+```
+
+## Why?
+
+Movement's local node (`movement node run-localnet`) takes ~15 seconds to boot. mvlite boots in <1 second because it skips consensus, P2P, mempool, and all the infrastructure a real validator needs. For local development and testing, you don't need any of that.
+
+| | Movement node | mvlite |
+|---|---|---|
+| Boot time | ~15s | <1s |
+| Consensus | Full BFT | None (single-process) |
+| State | Disk (RocksDB) | In-memory + JSON delta |
+| Mining | Block interval | Instant |
+| Network | P2P + mempool | None |
+
+## Quick start
+
+### Prerequisites
+
+- Rust 1.93+ (`rustup update stable`)
+- Git
+
+### Build
+
+```bash
+git clone https://github.com/gilbertsahumada/mvlite.git
+cd mvlite
+./build.sh
+```
+
+The build script clones `aptos-core` (pinned to the last Apache 2.0 commit) and compiles mvlite as a workspace member. First build takes ~10-15 minutes; subsequent builds are fast (~3s).
+
+### Run
+
+```bash
+# Start with clean genesis (no network connection needed)
+./target/mvlite start --port 8090
+
+# Or fork from a remote network
+./target/mvlite start --port 8090 --fork-url https://testnet.movementnetwork.xyz/v1
+```
+
+### Test
+
+```bash
+# Fund an account
+curl -X POST "http://localhost:8090/mint?address=0x42&amount=1000000000"
+
+# Query account
+curl http://localhost:8090/v1/accounts/0x1
+
+# View function
+curl -X POST http://localhost:8090/v1/view \
+  -H "Content-Type: application/json" \
+  -d '{"function":"0x1::coin::balance","type_arguments":["0x1::aptos_coin::AptosCoin"],"arguments":["0x42"]}'
+```
+
+## REST API
+
+mvlite implements a subset of the [Aptos REST API](https://aptos.dev/en/build/apis/fullnode-rest-api):
+
+| Endpoint | Method | Description | Status |
+|---|---|---|---|
+| `/v1/` | GET | Ledger info (chain_id, version, etc.) | Done |
+| `/v1/accounts/:address` | GET | Account data (sequence number, auth key) | Done |
+| `/v1/accounts/:address/resources` | GET | All account resources | Done |
+| `/v1/accounts/:address/resource/:type` | GET | Specific account resource | Done |
+| `/v1/view` | POST | Execute view function (BCS args) | Done |
+| `/v1/transactions` | POST | Submit signed transaction (BCS body) | Done |
+| `/v1/transactions/simulate` | POST | Simulate transaction without commit | Done |
+| `/mint` | POST | Fund account (faucet) | Done |
+
+## Integration with movehat
+
+mvlite is designed to be a drop-in replacement for Movement's local node when used with [movehat](https://github.com/gilbertsahumada/movehat). Future versions of movehat will detect a running mvlite instance and use it automatically:
+
+```typescript
+// Today (with Movement node): ~15s boot
+harness = await Harness.createLocal({ ... });
+
+// Tomorrow (with mvlite): <1s boot, same API
+harness = await Harness.createLocal({ ... });
+```
+
+No code changes required on the movehat side.
+
+## How it works
+
+mvlite uses the `aptos-transaction-simulation-session` crate from aptos-core. This crate:
+
+1. **Creates a genesis state** with the full Aptos/Move framework (all `0x1::*` modules)
+2. **Drives the AptosVM directly** -- `execute_transaction()`, `execute_view_function()`, `fund_account()`
+3. **Persists state to disk** as JSON delta files (config.json + delta.json)
+
+The HTTP server (axum) wraps the session behind a `Mutex` and translates REST requests into session method calls.
+
+## License
+
+Apache 2.0.
+
+This project uses code from [aptos-labs/aptos-core](https://github.com/aptos-labs/aptos-core) at commit `e33e3c1b9e` (November 20, 2025), which was published under the Apache License 2.0. The subsequent license change by Aptos Foundation (November 21, 2025) does not apply retroactively to code published under Apache 2.0.
+
+## Status
+
+Early development. Not production-ready. Contributions welcome.
+
+## Related
+
+- [movehat](https://github.com/gilbertsahumada/movehat) -- Hardhat-like development framework for Movement L1
+- [Anvil](https://book.getfoundry.sh/anvil/) -- The Ethereum equivalent (Foundry's local node)
+- [Movement Network](https://movementnetwork.xyz/) -- The L1 blockchain mvlite targets
