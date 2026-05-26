@@ -217,6 +217,8 @@ async fn submit_transaction(
             )
         })?;
 
+    let tx_hash = format!("0x{}", hex::encode(aptos_crypto::HashValue::sha3_256_of(&body).to_vec()));
+
     let (vm_status, output) = session
         .execute_transaction(txn)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -226,7 +228,7 @@ async fn submit_transaction(
     let success = vm_status == aptos_types::vm_status::VMStatus::Executed;
 
     Ok(Json(serde_json::json!({
-        "hash": format!("0x{}", hex::encode([0u8; 32])),
+        "hash": tx_hash,
         "vm_status": format!("{:?}", vm_status),
         "success": success,
         "gas_used": output.gas_used().to_string(),
@@ -245,6 +247,8 @@ async fn simulate_transaction(
             )
         })?;
 
+    let tx_hash = format!("0x{}", hex::encode(aptos_crypto::HashValue::sha3_256_of(&body).to_vec()));
+
     let (vm_status, output) = session
         .simulate_transaction(txn)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -252,7 +256,7 @@ async fn simulate_transaction(
     let success = vm_status == aptos_types::vm_status::VMStatus::Executed;
 
     Ok(Json(vec![serde_json::json!({
-        "hash": format!("0x{}", hex::encode([0u8; 32])),
+        "hash": tx_hash,
         "vm_status": format!("{:?}", vm_status),
         "success": success,
         "gas_used": output.gas_used().to_string(),
