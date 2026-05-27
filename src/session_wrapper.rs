@@ -71,6 +71,11 @@ impl SessionWrapper {
 
     pub fn store_transaction(&self, hash: String, result: serde_json::Value) {
         let mut store = self.tx_store.lock().unwrap();
+        if store.len() >= 10_000 {
+            if let Some(oldest) = store.keys().next().cloned() {
+                store.remove(&oldest);
+            }
+        }
         store.insert(hash, result);
     }
 
