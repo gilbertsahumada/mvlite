@@ -5,12 +5,14 @@ use aptos_types::transaction::{SignedTransaction, TransactionOutput};
 use aptos_types::vm_status::VMStatus;
 use move_core_types::identifier::Identifier;
 use move_core_types::language_storage::{ModuleId, StructTag, TypeTag};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 pub struct SessionWrapper {
     inner: Mutex<Session>,
     ops_count: Mutex<u64>,
+    tx_store: Mutex<HashMap<String, serde_json::Value>>,
 }
 
 impl SessionWrapper {
@@ -18,6 +20,7 @@ impl SessionWrapper {
         Self {
             inner: Mutex::new(session),
             ops_count: Mutex::new(0),
+            tx_store: Mutex::new(HashMap::new()),
         }
     }
 
@@ -60,12 +63,18 @@ impl SessionWrapper {
         &self,
         txn: SignedTransaction,
     ) -> Result<(VMStatus, TransactionOutput)> {
-        // Simulation runs the tx but does NOT advance the block.
-        // Limitation: the DeltaStateStore is still mutated (the Session
-        // API has no snapshot/rollback). Gas estimation is accurate;
-        // state side-effects leak. Acceptable for dev tooling.
         let mut session = self.inner.lock().unwrap();
         session.execute_transaction(txn, false, false)
+    }
+
+    pub fn store_transaction(&self, hash: String, result: serde_json::Value) {
+        let mut store = self.tx_store.lock().unwrap();
+        store.insert(hash, result);
+    }
+
+    pub fn get_transaction(&self, hash: &str) -> Option<serde_json::Value> {
+        let store = self.tx_store.lock().unwrap();
+        store.get(hash).cloned()
     }
 
     pub fn get_chain_id(&self) -> u64 {

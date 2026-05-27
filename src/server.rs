@@ -30,6 +30,8 @@ pub async fn run(session: SessionWrapper, port: u16) -> Result<()> {
         .route("/v1/view", post(view_function))
         .route("/v1/transactions", post(submit_transaction))
         .route("/v1/transactions/simulate", post(simulate_transaction))
+        .route("/v1/transactions/by_hash/:hash", get(get_transaction_by_hash))
+        .route("/v1/transactions/wait_by_hash/:hash", get(get_transaction_by_hash))
         .route("/mint", post(mint))
         .with_state(state);
 
@@ -227,21 +229,59 @@ async fn submit_transaction(
         })?;
 
     let tx_hash = format!("0x{}", hex::encode(aptos_crypto::HashValue::sha3_256_of(&body).to_vec()));
+    let sender = format!("0x{}", hex::encode(txn.sender().to_vec()));
+    let seq_num = txn.sequence_number().to_string();
+    let max_gas = txn.max_gas_amount().to_string();
+    let gas_price = txn.gas_unit_price().to_string();
+    let expiration = txn.expiration_timestamp_secs().to_string();
 
     let (vm_status, output) = session
         .execute_transaction(txn)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     session.increment_ops();
-
+    let version = session.get_ops_count().to_string();
     let success = vm_status == aptos_types::vm_status::VMStatus::Executed;
+    let vm_status_str = if success { "Executed successfully".to_string() } else { format!("{:?}", vm_status) };
+
+    let committed = serde_json::json!({
+        "type": "user_transaction",
+        "hash": tx_hash,
+        "success": success,
+        "vm_status": vm_status_str,
+        "version": version,
+        "sender": sender,
+        "sequence_number": seq_num,
+        "max_gas_amount": max_gas,
+        "gas_unit_price": gas_price,
+        "expiration_timestamp_secs": expiration,
+        "gas_used": output.gas_used().to_string(),
+        "timestamp": "0"
+    });
+
+    session.store_transaction(tx_hash.clone(), committed);
 
     Ok(Json(serde_json::json!({
+        "type": "pending_transaction",
         "hash": tx_hash,
-        "vm_status": format!("{:?}", vm_status),
-        "success": success,
-        "gas_used": output.gas_used().to_string(),
+        "sender": sender,
+        "sequence_number": seq_num,
+        "max_gas_amount": max_gas,
+        "gas_unit_price": gas_price,
+        "expiration_timestamp_secs": expiration,
+        "payload": {},
+        "signature": {}
     })))
+}
+
+async fn get_transaction_by_hash(
+    State(session): State<AppState>,
+    Path(hash): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    match session.get_transaction(&hash) {
+        Some(tx) => Ok(Json(tx)),
+        None => Err((StatusCode::NOT_FOUND, format!("Transaction not found: {}", hash))),
+    }
 }
 
 async fn simulate_transaction(
