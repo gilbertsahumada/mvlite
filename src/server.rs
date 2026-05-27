@@ -26,6 +26,7 @@ pub async fn run(session: SessionWrapper, port: u16) -> Result<()> {
             get(get_account_resource),
         )
         .route("/v1/accounts/:address/resources", get(get_account_resources))
+        .route("/v1/estimate_gas_price", get(estimate_gas_price))
         .route("/v1/view", post(view_function))
         .route("/v1/transactions", post(submit_transaction))
         .route("/v1/transactions/simulate", post(simulate_transaction))
@@ -62,6 +63,14 @@ async fn ledger_info(State(session): State<AppState>) -> Json<LedgerInfoResponse
         oldest_block_height: "0".to_string(),
         block_height: ops.to_string(),
     })
+}
+
+async fn estimate_gas_price() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "gas_estimate": 100,
+        "deprioritized_gas_estimate": 100,
+        "prioritized_gas_estimate": 150
+    }))
 }
 
 #[derive(Serialize)]
