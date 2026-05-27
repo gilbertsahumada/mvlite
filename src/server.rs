@@ -18,22 +18,21 @@ type AppState = Arc<SessionWrapper>;
 pub async fn run(session: SessionWrapper, port: u16) -> Result<()> {
     let state: AppState = Arc::new(session);
 
+    let v1 = Router::new()
+        .route("/", get(ledger_info))
+        .route("/accounts/:address", get(get_account))
+        .route("/accounts/:address/resource/*resource_type", get(get_account_resource))
+        .route("/accounts/:address/resources", get(get_account_resources))
+        .route("/accounts/:address/module/:module_name", get(get_module))
+        .route("/estimate_gas_price", get(estimate_gas_price))
+        .route("/view", post(view_function))
+        .route("/transactions", post(submit_transaction))
+        .route("/transactions/simulate", post(simulate_transaction))
+        .route("/transactions/by_hash/:hash", get(get_transaction_by_hash))
+        .route("/transactions/wait_by_hash/:hash", get(get_transaction_by_hash));
+
     let app = Router::new()
-        .route("/v1", get(ledger_info_no_slash))
-        .route("/v1/", get(ledger_info))
-        .route("/v1/accounts/:address", get(get_account))
-        .route(
-            "/v1/accounts/:address/resource/*resource_type",
-            get(get_account_resource),
-        )
-        .route("/v1/accounts/:address/resources", get(get_account_resources))
-        .route("/v1/accounts/:address/module/:module_name", get(get_module))
-        .route("/v1/estimate_gas_price", get(estimate_gas_price))
-        .route("/v1/view", post(view_function))
-        .route("/v1/transactions", post(submit_transaction))
-        .route("/v1/transactions/simulate", post(simulate_transaction))
-        .route("/v1/transactions/by_hash/:hash", get(get_transaction_by_hash))
-        .route("/v1/transactions/wait_by_hash/:hash", get(get_transaction_by_hash))
+        .nest("/v1", v1)
         .route("/mint", post(mint))
         .with_state(state);
 
@@ -70,10 +69,6 @@ fn build_ledger_info(session: &SessionWrapper) -> LedgerInfoResponse {
 }
 
 async fn ledger_info(State(session): State<AppState>) -> Json<LedgerInfoResponse> {
-    Json(build_ledger_info(&session))
-}
-
-async fn ledger_info_no_slash(State(session): State<AppState>) -> Json<LedgerInfoResponse> {
     Json(build_ledger_info(&session))
 }
 
@@ -121,10 +116,10 @@ async fn get_account(
                 authentication_key: auth_key,
             }))
         }
-        Ok(None) => Err((
-            StatusCode::NOT_FOUND,
-            format!("Account {} not found (view_resource returned None)", address),
-        )),
+        Ok(None) => Ok(Json(AccountDataResponse {
+            sequence_number: "0".to_string(),
+            authentication_key: format!("0x{}", "0".repeat(64)),
+        })),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("view_resource error for {}: {}", address, e),
