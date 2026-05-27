@@ -65,15 +65,8 @@ impl SessionWrapper {
         &self,
         txn: SignedTransaction,
     ) -> Result<(VMStatus, TransactionOutput)> {
-        // Known limitation: the Session API has no snapshot/rollback,
-        // so simulation applies the write set to the state store.
-        // Gas estimation is accurate but state side-effects persist.
-        // For a dev tool this is acceptable. A proper fix requires
-        // cloning the state store or adding snapshot support upstream.
         let mut session = self.inner.lock().unwrap();
-        let result = session.execute_transaction(txn, false, false)?;
-        // Do NOT advance block — this distinguishes simulate from submit.
-        Ok(result)
+        session.execute_transaction(txn, false, false)
     }
 
     pub fn store_transaction(&self, hash: String, result: serde_json::Value) {
@@ -89,18 +82,6 @@ impl SessionWrapper {
     pub fn get_transaction(&self, hash: &str) -> Option<serde_json::Value> {
         let store = self.tx_store.lock().unwrap();
         store.get(hash).cloned()
-    }
-
-    pub fn has_any_state(&self, addr: AccountAddress) -> bool {
-        let session = self.inner.lock().unwrap();
-        let fungible_tag = StructTag {
-            address: AccountAddress::ONE,
-            module: Identifier::new("fungible_asset").unwrap(),
-            name: Identifier::new("FungibleStore").unwrap(),
-            type_args: vec![],
-        };
-        let key = StateKey::resource(&addr, &fungible_tag).unwrap();
-        matches!(session.state_store().get_state_value_bytes(&key), Ok(Some(_)))
     }
 
     pub fn get_module_bytes(&self, addr: AccountAddress, name: &str) -> Result<Option<Vec<u8>>> {
