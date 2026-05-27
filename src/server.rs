@@ -19,6 +19,7 @@ pub async fn run(session: SessionWrapper, port: u16) -> Result<()> {
     let state: AppState = Arc::new(session);
 
     let app = Router::new()
+        .route("/v1", get(ledger_info_no_slash))
         .route("/v1/", get(ledger_info))
         .route("/v1/accounts/:address", get(get_account))
         .route(
@@ -26,6 +27,7 @@ pub async fn run(session: SessionWrapper, port: u16) -> Result<()> {
             get(get_account_resource),
         )
         .route("/v1/accounts/:address/resources", get(get_account_resources))
+        .route("/v1/accounts/:address/module/:module_name", get(get_module))
         .route("/v1/estimate_gas_price", get(estimate_gas_price))
         .route("/v1/view", post(view_function))
         .route("/v1/transactions", post(submit_transaction))
@@ -53,9 +55,9 @@ struct LedgerInfoResponse {
     block_height: String,
 }
 
-async fn ledger_info(State(session): State<AppState>) -> Json<LedgerInfoResponse> {
+fn build_ledger_info(session: &SessionWrapper) -> LedgerInfoResponse {
     let ops = session.get_ops_count();
-    Json(LedgerInfoResponse {
+    LedgerInfoResponse {
         chain_id: session.get_chain_id(),
         epoch: "1".to_string(),
         ledger_version: ops.to_string(),
@@ -64,7 +66,15 @@ async fn ledger_info(State(session): State<AppState>) -> Json<LedgerInfoResponse
         node_role: "full_node".to_string(),
         oldest_block_height: "0".to_string(),
         block_height: ops.to_string(),
-    })
+    }
+}
+
+async fn ledger_info(State(session): State<AppState>) -> Json<LedgerInfoResponse> {
+    Json(build_ledger_info(&session))
+}
+
+async fn ledger_info_no_slash(State(session): State<AppState>) -> Json<LedgerInfoResponse> {
+    Json(build_ledger_info(&session))
 }
 
 async fn estimate_gas_price() -> Json<serde_json::Value> {
@@ -160,6 +170,32 @@ async fn get_account_resources(
     }
 
     Ok(Json(resources))
+}
+
+async fn get_module(
+    State(session): State<AppState>,
+    Path((address, module_name)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let addr = parse_address(&address)?;
+
+    let bytes = session
+        .get_module_bytes(addr, &module_name)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    match bytes {
+        Some(bytecode) => {
+            let module_bytecode = aptos_api_types::MoveModuleBytecode::new(bytecode)
+                .try_parse_abi()
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("ABI parse error: {}", e)))?;
+            serde_json::to_value(module_bytecode)
+                .map(Json)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        }
+        None => Err((
+            StatusCode::NOT_FOUND,
+            format!("Module not found: {}::{}", address, module_name),
+        )),
+    }
 }
 
 async fn get_account_resource(
